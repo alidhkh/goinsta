@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"mime/multipart"
 	"net/http"
 	neturl "net/url"
@@ -1087,4 +1088,80 @@ func (insta *Instagram) UploadAlbum(photos []io.Reader, photoCaption string, qua
 	}
 
 	return uploadResult.Media, nil
+}
+
+func (account *Account) uploadPhoto(photoFile string) (upResp *uploadResp, err error) {
+	uploadID := time.Now().Unix()
+	rndNumber := rand.Intn(9999999999-1000000000) + 1000000000
+	name := strconv.FormatInt(uploadID, 10) + "_0_" + strconv.Itoa(rndNumber)
+	address := fmt.Sprintf(urlUploadPhoto, name)
+	buf := new(bytes.Buffer)
+	var f *os.File
+	f, err = os.Open(photoFile)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, err = buf.ReadFrom(f)
+	if err != nil {
+		return
+	}
+	// bs := buf.Bytes()
+	var req *http.Request
+	req, err = http.NewRequest("POST", "https://i.instagram.com/"+address, buf)
+	if err != nil {
+		return
+	}
+
+	ruploadParams := map[string]string{
+		// "retry_context":     `{"num_step_auto_retry": 0, "num_reupload": 0, "num_step_manual_retry": 0}`,
+		"media_type": "1",
+		"upload_id":  strconv.FormatInt(uploadID, 10),
+		// "xsharing_user_ids": "[]",
+		"image_compression": `{"lib_name": "moz", "lib_version": "3.1.m", "quality": "85"}`,
+	}
+	var params []byte
+	params, err = json.Marshal(ruploadParams)
+	if err != nil {
+		return
+	}
+	options := &reqOptions{
+		Headers: map[string]string{
+			"X_FB_PHOTO_WATERFALL_ID":    "398829a5-cf00-4abe-ba8f-8031239f3308",
+			"Content-type":               "application/octet-stream",
+			"Connection":                 "close",
+			"User-Agent":                 goInstaUserAgent,
+			"X-Entity-Name":              name,
+			"X-Instagram-Rupload-Params": string(params),
+			"Offset":                     "0",
+			"X-Entity-Type":              "image/jpeg",
+			"X-Entity-Length":            strconv.FormatInt(req.ContentLength, 10),
+		},
+		IsPost:   true,
+		Endpoint: address,
+		UseBase:  true,
+		RawData:  buf,
+	}
+	var body []byte
+	body, err = account.inst.sendRequest(
+		options,
+	)
+	if err != nil {
+		return
+	}
+	err = json.Unmarshal(body, &upResp)
+	if err != nil {
+		return
+	}
+	if upResp.Status != "ok" {
+		err = fmt.Errorf("unknown error, status: %+v", upResp)
+		return
+	}
+	return
+}
+
+type uploadResp struct {
+	UploadID       string      `json:"upload_id"`
+	XsharingNonces interface{} `json:"xsharing_nonces"`
+	Status         string      `json:"status"`
 }
