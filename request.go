@@ -3,6 +3,7 @@ package goinsta
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -29,12 +30,14 @@ type reqOptions struct {
 	IsPost bool
 
 	// UseV2 is set when API endpoint uses v2 url.
-	UseV2 bool
-
+	UseV2   bool
+	UseBase bool
 	// Query is the parameters of the request
 	//
 	// This parameters are independents of the request method (POST|GET)
-	Query map[string]string
+	Query   map[string]string
+	Headers map[string]string
+	RawData *bytes.Buffer
 }
 
 func (insta *Instagram) sendSimpleRequest(uri string, a ...interface{}) (body []byte, err error) {
@@ -58,27 +61,36 @@ func (insta *Instagram) sendRequest(o *reqOptions) (body []byte, err error) {
 	if o.UseV2 {
 		nu = goInstaAPIUrlv2
 	}
+	if o.UseBase {
+		nu = goInstaBaseUrl
+	}
 
 	u, err := url.Parse(nu + o.Endpoint)
 	if err != nil {
 		return nil, err
 	}
 
-	vs := url.Values{}
-	bf := bytes.NewBuffer([]byte{})
+	var bf *bytes.Buffer
 
-	for k, v := range o.Query {
-		vs.Add(k, v)
-	}
-
-	if o.IsPost {
-		bf.WriteString(vs.Encode())
+	if o.RawData != nil {
+		bf = o.RawData
 	} else {
-		for k, v := range u.Query() {
-			vs.Add(k, strings.Join(v, " "))
-		}
+		vs := url.Values{}
 
-		u.RawQuery = vs.Encode()
+		bf = bytes.NewBuffer([]byte{})
+
+		for k, v := range o.Query {
+			vs.Add(k, v)
+		}
+		if o.IsPost {
+			bf.WriteString(vs.Encode())
+		} else {
+			for k, v := range u.Query() {
+				vs.Add(k, strings.Join(v, " "))
+			}
+
+			u.RawQuery = vs.Encode()
+		}
 	}
 
 	var req *http.Request
@@ -98,7 +110,17 @@ func (insta *Instagram) sendRequest(o *reqOptions) (body []byte, err error) {
 	req.Header.Set("X-IG-Bandwidth-Speed-KBPS", "-1.000")
 	req.Header.Set("X-IG-Bandwidth-TotalBytes-B", "0")
 	req.Header.Set("X-IG-Bandwidth-TotalTime-MS", "0")
-
+	if o.Headers != nil {
+		for k, h := range o.Headers {
+			req.Header.Set(k, h)
+		}
+	}
+	if o.UseBase {
+		uri, _ := url.Parse(goInstaBaseUrl)
+		sourceUri, _ := url.Parse(goInstaAPIUrl)
+		insta.switchCookiesBetweenDomains(sourceUri, uri)
+		// return
+	}
 	resp, err := insta.c.Do(req)
 	if err != nil {
 		return nil, err
@@ -119,36 +141,63 @@ func (insta *Instagram) sendRequest(o *reqOptions) (body []byte, err error) {
 	return body, err
 }
 
+func (insta *Instagram) switchCookiesBetweenDomains(source, target *url.URL) (err error) {
+	cookies := insta.c.Jar.Cookies(source)
+	if cookies == nil || len(cookies) == 0 {
+		return errors.New("empty cookies")
+	}
+	insta.c.Jar.SetCookies(target, cookies)
+	return nil
+}
+
 func isError(code int, body []byte) (err error) {
-	switch code {
-	case 200:
-	case 503:
+	if code == 200 {
+		return nil
+	}
+	if code == 400 {
+		errMap := GeneralError{}
+		err = json.Unmarshal(body, &errMap)
+		if err != nil {
+			return
+		}
+		return errMap
+	}
+	if code == 503 {
 		return Error503{
 			Message: "Instagram API error. Try it later.",
 		}
-	case 400:
-		ierr := Error400{}
-		err = json.Unmarshal(body, &ierr)
-		if err != nil {
-			return err
-		}
-
-		if ierr.Message == "challenge_required" {
-			return ierr.ChallengeError
-
-		}
-
-		if err == nil && ierr.Message != "" {
-			return ierr
-		}
-	default:
-		ierr := ErrorN{}
-		err = json.Unmarshal(body, &ierr)
-		if err != nil {
-			return err
-		}
-		return ierr
 	}
+	// switch code {
+	// case 200:
+	// case 503:
+	// 	return Error503{
+	// 		Message: "Instagram API error. Try it later.",
+	// 	}
+	// case 400:
+	// 	ierr := Error400{}
+	// 	err = json.Unmarshal(body, &ierr)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	if ierr.Message == "challenge_required" {
+	// 		return ierr.ChallengeError
+	// 	}
+	// 	if ierr.Message == "consent_required" {
+	// 		iErr := ConsentError{}
+	// 		_ = json.Unmarshal(body, &iErr)
+	// 		return iErr
+	// 	}
+	// 	if ierr.Message != "" {
+	// 		return ierr
+	// 	}
+	// default:
+	// 	ierr := ErrorN{}
+	// 	err = json.Unmarshal(body, &ierr)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	return ierr
+	// }
 	return nil
 }
 
