@@ -1,6 +1,7 @@
 package goinsta
 
 const (
+	goInstaBaseUrl       = "https://i.instagram.com/"
 	goInstaAPIUrl        = "https://i.instagram.com/api/v1/"
 	goInstaAPIUrlv2      = "https://i.instagram.com/api/v2/"
 	goInstaUserAgent     = "Instagram 107.0.0.27.121 Android (24/7.0; 380dpi; 1080x1920; OnePlus; ONEPLUS A3010; OnePlus3T; qcom; en_US)"
@@ -44,14 +45,17 @@ const (
 	urlExpose         = "qe/expose/"
 
 	// account
+	urlAgreeConsent  = "consent/existing_user_flow/"
 	urlCurrentUser   = "accounts/current_user/"
 	urlChangePass    = "accounts/change_password/"
 	urlSetPrivate    = "accounts/set_private/"
 	urlSetPublic     = "accounts/set_public/"
 	urlRemoveProfPic = "accounts/remove_profile_picture/"
+	urlChangeProfPic = "accounts/change_profile_picture/"
+	urlUploadPhoto   = "rupload_igphoto/%s"
 	urlFeedSaved     = "feed/saved/"
 	urlSetBiography  = "accounts/set_biography/"
-	urlEditProfile   = "accounts/edit_profile"
+	urlEditProfile   = "accounts/edit_profile/"
 	urlFeedLiked     = "feed/liked/"
 
 	// account and profile
